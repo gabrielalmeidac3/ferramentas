@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <title>Gravador de Webcam com Proporção</title>
+  <style>
+    body {
+      font-family: sans-serif;
+      padding: 20px;
+      background: #f9f9f9;
+    }
+    video {
+      width: 100%;
+      max-width: 640px;
+      margin-top: 10px;
+      border: 1px solid #ccc;
+      background: black;
+    }
+    select, button {
+      margin: 5px 0;
+      padding: 8px;
+      font-size: 16px;
+    }
+  </style>
+</head>
+<body>
+
+  <h1>Gravador de Webcam com Áudio e Proporção</h1>
+
+  <label for="videoSelect">Câmera:</label>
+  <select id="videoSelect"></select>
+
+  <label for="audioSelect">Microfone:</label>
+  <select id="audioSelect"></select>
+
+  <label for="aspectSelect">Proporção:</label>
+  <select id="aspectSelect">
+    <option value="16:9">16:9 (Paisagem)</option>
+    <option value="1:1">1:1 (Quadrado)</option>
+    <option value="9:16">9:16 (Retrato)</option>
+  </select>
+
+  <br>
+
+  <button id="startBtn">Iniciar Gravação</button>
+  <button id="pauseBtn" disabled>Pausar</button>
+  <button id="resumeBtn" disabled>Retomar</button>
+  <button id="stopBtn" disabled>Parar</button>
+  <a id="downloadLink" style="display:none;">Baixar Gravação</a>
+
+  <video id="preview" autoplay muted playsinline></video>
+  <video id="playback" controls style="display:none;"></video>
+
+  <script>
+    const videoSelect = document.getElementById('videoSelect');
+    const audioSelect = document.getElementById('audioSelect');
+    const aspectSelect = document.getElementById('aspectSelect');
+    const preview = document.getElementById('preview');
+    const playback = document.getElementById('playback');
+
+    const startBtn = document.getElementById('startBtn');
+    const pauseBtn = document.getElementById('pauseBtn');
+    const resumeBtn = document.getElementById('resumeBtn');
+    const stopBtn = document.getElementById('stopBtn');
+    const downloadLink = document.getElementById('downloadLink');
+
+    let mediaRecorder;
+    let recordedChunks = [];
+    let stream;
+
+    async function getDevices() {
+      const devices = await navigator.mediaDevices.enumerateDevices();
+
+      videoSelect.innerHTML = '';
+      audioSelect.innerHTML = '';
+
+      devices.forEach(device => {
+        const option = document.createElement('option');
+        option.value = device.deviceId;
+        option.text = device.label || `${device.kind} ${videoSelect.length + 1}`;
+
+        if (device.kind === 'videoinput') {
+          videoSelect.appendChild(option);
+        } else if (device.kind === 'audioinput') {
+          audioSelect.appendChild(option);
+        }
+      });
+    }
+
+    function getVideoConstraintsFromAspect() {
+      const aspect = aspectSelect.value;
+      let width = 1280;
+      let height = 720;
+
+      if (aspect === '1:1') {
+        width = 720;
+        height = 720;
+      } else if (aspect === '9:16') {
+        width = 720;
+        height = 1280;
+      }
+
+      return { width: { ideal: width }, height: { ideal: height } };
+    }
+
+    async function startStream() {
+      if (stream) {
+        stream.getTracks().forEach(track => track.stop());
+      }
+
+      const videoConstraints = {
+        ...getVideoConstraintsFromAspect(),
+        deviceId: videoSelect.value ? { exact: videoSelect.value } : undefined
+      };
+
+      const audioConstraints = {
+        deviceId: audioSelect.value ? { exact: audioSelect.value } : undefined
+      };
+
+      stream = await navigator.mediaDevices.getUserMedia({
+        video: videoConstraints,
+        audio: audioConstraints
+      });
+
+      preview.srcObject = stream;
+    }
+
+    startBtn.onclick = async () => {
+      recordedChunks = [];
+      await startStream();
+
+      mediaRecorder = new MediaRecorder(stream, { mimeType: 'video/webm;codecs=vp8,opus' });
+
+      mediaRecorder.ondataavailable = event => {
+        if (event.data.size > 0) {
+          recordedChunks.push(event.data);
+        }
+      };
+
+      mediaRecorder.onstop = () => {
+        const blob = new Blob(recordedChunks, { type: 'video/webm' });
+        const url = URL.createObjectURL(blob);
+        playback.src = url;
+        playback.style.display = 'block';
+
+        downloadLink.href = url;
+        downloadLink.download = 'gravacao.webm';
+        downloadLink.style.display = 'inline-block';
+        downloadLink.textContent = 'Baixar Gravação';
+      };
+
+      mediaRecorder.start();
+      startBtn.disabled = true;
+      pauseBtn.disabled = false;
+      stopBtn.disabled = false;
+    };
+
+    pauseBtn.onclick = () => {
+      mediaRecorder.pause();
+      pauseBtn.disabled = true;
+      resumeBtn.disabled = false;
+    };
+
+    resumeBtn.onclick = () => {
+      mediaRecorder.resume();
+      resumeBtn.disabled = true;
+      pauseBtn.disabled = false;
+    };
+
+    stopBtn.onclick = () => {
+      mediaRecorder.stop();
+      startBtn.disabled = false;
+      pauseBtn.disabled = true;
+      resumeBtn.disabled = true;
+      stopBtn.disabled = true;
+    };
+
+    navigator.mediaDevices.getUserMedia({ video: true, audio: true }).then(getDevices);
+    navigator.mediaDevices.addEventListener('devicechange', getDevices);
+
+    videoSelect.onchange = startStream;
+    audioSelect.onchange = startStream;
+    aspectSelect.onchange = startStream;
+  </script>
+
+</body>
+</html>
